@@ -32,19 +32,18 @@ public class Main {
     // http://stackoverflow.com/a/30618794/516188
     // fix when java9 is released http://stackoverflow.com/a/37681322/516188
     private static byte[] streamToByteArray(InputStream stream) throws IOException {
-
         byte[] buffer = new byte[1024];
         ByteArrayOutputStream os = new ByteArrayOutputStream();
 
-        int line = 0;
+        int byteCount = 0;
         // read bytes from stream, and store them in buffer
-        while ((line = stream.read(buffer)) != -1) {
+        while ((byteCount = stream.read(buffer)) != -1) {
             // Writes bytes from byte array (buffer) into output stream.
-            os.write(buffer, 0, line);
+            os.write(buffer, 0, byteCount);
         }
         stream.close();
         os.flush();
         os.close();
         return os.toByteArray();
-}
+    }
 }
