@@ -9,13 +9,6 @@ public class Main {
         System.out.println("Hello world!");
         Scanner scan = new Scanner(System.in);
 
-        // while (true) {
-        //     String input = scan.next();
-        //     System.out.println(input);
-        //     try (FileWriter fw = new FileWriter("e:/tt", true)) {
-        //         fw.write(input + "\r\n");
-        //     }
-        // }
         System.out.print(new String(readFromHost("testkey"), "UTF-8"));
     }
 
