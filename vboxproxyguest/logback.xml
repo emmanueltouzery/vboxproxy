@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<configuration>
+
+    <property name="LOG_DIR" value="e:" />
+
+    <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>${LOG_DIR}/vboxproxy.log</file>
+
+        <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
+            <!-- daily rollover. Because the filename ends with .gz,
+            archived logs will be compressed. -->
+            <fileNamePattern>${LOG_DIR}/vboxproxy.log.%d{yyyy-MM-dd}.log.gz</fileNamePattern>
+
+            <!-- keep 10 days' worth of history -->
+            <maxHistory>10</maxHistory>
+        </rollingPolicy>
+
+        <!-- deny all events with a level below INFO, that is TRACE and DEBUG -->
+        <!-- <filter class="ch.qos.logback.classic.filter.ThresholdFilter">
+          <level>INFO</level>
+        </filter> -->
+
+        <encoder>
+            <pattern>%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n</pattern>
+        </encoder>
+    </appender>
+
+
+    <root level="TRACE">
+        <appender-ref ref="FILE" />
+    </root>
+</configuration>

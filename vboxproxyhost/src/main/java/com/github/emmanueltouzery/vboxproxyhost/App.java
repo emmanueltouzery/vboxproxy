@@ -18,6 +18,7 @@ public class App {
     private static final String GUEST_USERNAME = "Mitja Resman";
     private static final String GUEST_JAVA_PATH = "C:\\Program Files\\Java\\jre1.8.0_102\\bin\\java.exe";
     private static final String GUEST_APP_PATH = "e:\\vboxproxyguest-1.0-SNAPSHOT.jar";
+    private static final String GUEST_LOGBACK_PATH = "e:";
     private static final String GUEST_APP_CLASS = "com.github.emmanueltouzery.vboxproxyguest.App";
     private static final int PORT = 2222;
     private static final String SHARED_KEY = "testkey";
@@ -62,6 +63,7 @@ public class App {
     }
 
     private static void queueMessage(String guestId, String key, StreamHelpers.ByteArray value) throws IOException {
+        System.out.println("got message from socket client, forwarding to guest => " + new String(value.bytes, "UTF-8"));
         pendingMessages.add(value);
     }
 
@@ -115,7 +117,7 @@ public class App {
                                     Consumer<StreamHelpers.ByteArray> handler) throws Exception {
         ProcessBuilder proc = new ProcessBuilder(
             "VBoxManage", "guestcontrol", "--username", guestUser, guestId, "run",
-            "--exe", GUEST_JAVA_PATH, "--wait-stdout", "--", "java", "-cp", guestAppPath, GUEST_APP_CLASS);
+            "--exe", GUEST_JAVA_PATH, "--wait-stdout", "--", "java", "-cp", guestAppPath + ";" + GUEST_LOGBACK_PATH, GUEST_APP_CLASS);
         Process p = proc.start();
         InputStream stream = p.getInputStream();
         StreamHelpers.streamHandleAsAvailable(

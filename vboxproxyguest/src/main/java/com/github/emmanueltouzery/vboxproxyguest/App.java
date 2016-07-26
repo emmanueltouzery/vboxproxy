@@ -6,6 +6,8 @@ import java.util.function.*;
 import java.net.*;
 import java.util.Base64;
 import javaslang.control.*;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import com.github.emmanueltouzery.vboxproxycommon.*;
 
@@ -16,9 +18,10 @@ public class App {
     private static final String REMOTE_SERVER = "192.168.40.4";
     private static final int REMOTE_PORT = 22;
 
-    public static void main(String[] argv) throws Exception {
-        Scanner scan = new Scanner(System.in);
+    private static final Logger logger = LoggerFactory.getLogger(App.class);
 
+    public static void main(String[] argv) throws Exception {
+        logger.info("vboxproxyguest starting!");
         Socket socket = new Socket(REMOTE_SERVER, REMOTE_PORT);
 
         Thread socketWriterThread = new Thread(() -> Try.run(() -> writeToSocket(socket.getOutputStream())));
@@ -34,7 +37,7 @@ public class App {
             try {
                 waitForHost(SHARED_KEY);
                 stream.write(readFromHost(SHARED_KEY));
-                // System.out.println("guest says: " + new String(readFromHost(SHARED_KEY), "UTF-8"));
+                logger.info("guest says: " + new String(readFromHost(SHARED_KEY), "UTF-8"));
                 clearFromHost(SHARED_KEY);
             } catch (Throwable t) {
                 t.printStackTrace();
@@ -54,13 +57,14 @@ public class App {
         // will probably base64-encode anyway as I use the command-line tools
         String data = new String(StreamHelpers.streamToByteArray(p.getInputStream()), "UTF-8");
         final String discriminator = "Value: ";
-        return data.substring(data.indexOf(discriminator) + discriminator.length()).getBytes();
+        return Base64.getDecoder().decode(data.substring(data.indexOf(discriminator) + discriminator.length()));
     }
 
-    private static void clearFromHost(String key) throws IOException {
+    private static void clearFromHost(String key) throws Exception {
         ProcessBuilder proc = new ProcessBuilder(
             VIRTUALBOX_FOLDER + "VBoxControl.exe", "guestproperty", "delete", key);
         Process p = proc.start();
+        p.waitFor();
     }
 
     private static void waitForHost(String key) throws Exception {
