@@ -1,2 +1,4 @@
 vboxproxyhost/target
+vboxproxyguest/target
+vboxproxycommon/target
 dependency-reduced-pom.xml
