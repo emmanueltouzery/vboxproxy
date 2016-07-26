@@ -4,12 +4,17 @@ import java.util.*;
 public class Main {
 
     private static final String VIRTUALBOX_FOLDER = "C:\\Program Files\\Oracle\\VirtualBox Guest Additions\\";
+    private static final String SHARED_KEY = "testkey";
 
     public static void main(String[] argv) throws Exception {
         System.out.println("Hello world!");
         Scanner scan = new Scanner(System.in);
 
-        System.out.print(new String(readFromHost("testkey"), "UTF-8"));
+        while (true) {
+            waitForHost(SHARED_KEY);
+            System.out.println("guest says: " + new String(readFromHost(SHARED_KEY), "UTF-8"));
+            clearFromHost(SHARED_KEY);
+        }
     }
 
     private static byte[] readFromHost(String key) throws IOException {
@@ -20,6 +25,19 @@ public class Main {
         String data = new String(streamToByteArray(p.getInputStream()), "UTF-8");
         final String discriminator = "Value: ";
         return data.substring(data.indexOf(discriminator) + discriminator.length()).getBytes();
+    }
+
+    private static void clearFromHost(String key) throws IOException {
+        ProcessBuilder proc = new ProcessBuilder(
+            VIRTUALBOX_FOLDER + "VBoxControl.exe", "guestproperty", "delete", key);
+        Process p = proc.start();
+    }
+
+    private static void waitForHost(String key) throws Exception {
+        ProcessBuilder proc = new ProcessBuilder(
+            VIRTUALBOX_FOLDER + "VBoxControl.exe", "guestproperty", "wait", key);
+        Process p = proc.start();
+        p.waitFor();
     }
 
     // http://stackoverflow.com/a/30618794/516188
