@@ -17,11 +17,16 @@ public class StreamHelpers {
      * WILL block the current thread!!!
      */
     public static void streamHandleAsAvailable(InputStream stream,
-                                                Consumer<ByteArray> handler) throws Exception {
+                                               Consumer<ByteArray> handler,
+                                               Consumer<Throwable> logger) {
         while (true) {
-            byte[] read = streamReadAvailable(stream);
-            if (read.length > 0) {
-                handler.accept(new ByteArray(read));
+            try {
+                byte[] read = streamReadAvailable(stream);
+                if (read.length > 0) {
+                    handler.accept(new ByteArray(read));
+                }
+            } catch (Throwable t) {
+                logger.accept(t);
             }
         }
     }

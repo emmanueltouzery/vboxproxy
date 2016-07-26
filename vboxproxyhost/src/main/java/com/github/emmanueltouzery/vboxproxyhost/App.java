@@ -32,13 +32,13 @@ public class App {
         Consumer<StreamHelpers.ByteArray> msgProcessor = bytes ->
             Try.run(() -> queueMessage(GUEST_ID, SHARED_KEY, bytes));
         Thread readerThread = new Thread(
-            () -> Try.run(() -> StreamHelpers.streamHandleAsAvailable(clientIs, msgProcessor))
-            .orElseRun(Throwable::printStackTrace));
+            () -> StreamHelpers.streamHandleAsAvailable(clientIs, msgProcessor, t -> t.printStackTrace()));
         readerThread.start();
         Consumer<StreamHelpers.ByteArray> toClientWriter = data ->
             Try.run(() -> {
                     System.out.println("writing to downsocket: " + new String(data.bytes, "UTF-8"));
                     clientSocket.getOutputStream().write(data.bytes);
+                    clientSocket.getOutputStream().flush();
                 });
 
         System.out.println("before receiver thread");
@@ -68,9 +68,10 @@ public class App {
     }
 
     private static void sendMessage(String guestId, String key, StreamHelpers.ByteArray value) throws IOException {
-        System.out.println("Sending to guest => " + value.bytes);
+        String encoded = Base64.getEncoder().encodeToString(value.bytes);
+        System.out.println("Sending to guest => " + value.bytes + " (length: " + encoded.length() + ")");
         ProcessBuilder proc = new ProcessBuilder(
-            "VBoxManage", "guestproperty", "set", guestId, key, Base64.getEncoder().encodeToString(value.bytes));
+            "VBoxManage", "guestproperty", "set", guestId, key, encoded);
         Process p = proc.start();
     }
 
@@ -128,6 +129,7 @@ public class App {
                         System.out.println("will give to down socket2 => " + Base64.getDecoder().decode(base64));
                         handler.accept(new StreamHelpers.ByteArray(Base64.getDecoder().decode(base64)));
                     }).orElseRun(x -> x.printStackTrace());
-            });
+            },
+            t -> t.printStackTrace());
     }
 }

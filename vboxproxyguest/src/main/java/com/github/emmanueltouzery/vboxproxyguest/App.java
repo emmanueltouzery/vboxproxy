@@ -25,11 +25,13 @@ public class App {
     public static void main(String[] argv) throws Exception {
         logger.info("vboxproxyguest starting!");
         Socket socket = new Socket(REMOTE_SERVER, REMOTE_PORT);
+        final OutputStream socketOs = socket.getOutputStream();
+        final InputStream socketIs = socket.getInputStream();
 
-        Thread socketWriterThread = new Thread(() -> Try.run(() -> writeToSocket(socket.getOutputStream())));
+        Thread socketWriterThread = new Thread(() -> writeToSocket(socketOs));
         socketWriterThread.start();
 
-        Thread socketReaderThread = new Thread(() -> Try.run(() -> readFromSocket(socket.getInputStream())));
+        Thread socketReaderThread = new Thread(() -> readFromSocket(socketIs));
         socketReaderThread.start();
     }
 
@@ -43,6 +45,7 @@ public class App {
                     waitForHost(SHARED_KEY);
                 }
                 stream.write(hostMsg.get().bytes);
+                stream.flush();
                 logger.info("host says: " + new String(hostMsg.get().bytes, "UTF-8"));
                 clearFromHost(SHARED_KEY);
                 logger.info("successfully cleared from host");
@@ -53,18 +56,18 @@ public class App {
     }
 
     // we communicate with the host by writing to stdout.
-    private static void readFromSocket(InputStream stream) throws Exception {
+    private static void readFromSocket(InputStream stream) {
         StreamHelpers.streamHandleAsAvailable(stream, data -> {
                 Try.run(() -> logger.info("remote says: {}", new String(data.bytes, "UTF-8")));
                 System.out.print(Base64.getEncoder().encodeToString(data.bytes));
-            });
+            }, t -> logger.error("error reading from socket", t));
     }
 
     private static Option<StreamHelpers.ByteArray> readFromHost(String key) throws IOException {
         ProcessBuilder proc = new ProcessBuilder(
             VIRTUALBOX_FOLDER + "VBoxControl.exe", "guestproperty", "get", key);
         Process p = proc.start();
-        // will probably base64-encode anyway as I use the command-line tools
+        // must base64-encode as I use the command-line tools
         String data = new String(StreamHelpers.streamToByteArray(p.getInputStream()), "UTF-8");
         final String discriminator = "Value: ";
         if (data.indexOf(discriminator) < 0) {
