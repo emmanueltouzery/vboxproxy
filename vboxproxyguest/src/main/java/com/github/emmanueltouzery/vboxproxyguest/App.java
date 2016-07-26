@@ -8,6 +8,7 @@ import java.util.Base64;
 import javaslang.control.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import javaslang.control.*;
 
 import com.github.emmanueltouzery.vboxproxycommon.*;
 
@@ -17,6 +18,7 @@ public class App {
     private static final String SHARED_KEY = "testkey";
     private static final String REMOTE_SERVER = "192.168.40.4";
     private static final int REMOTE_PORT = 22;
+    private static final int WAIT_TIMEOUT_MS = 1000;
 
     private static final Logger logger = LoggerFactory.getLogger(App.class);
 
@@ -35,29 +37,44 @@ public class App {
     private static void writeToSocket(OutputStream stream) {
         while (true) {
             try {
-                waitForHost(SHARED_KEY);
-                stream.write(readFromHost(SHARED_KEY));
-                logger.info("guest says: " + new String(readFromHost(SHARED_KEY), "UTF-8"));
+                logger.info("waiting for host message");
+                Option<StreamHelpers.ByteArray> hostMsg;
+                while ((hostMsg = readFromHost(SHARED_KEY)).isEmpty()) {
+                    waitForHost(SHARED_KEY);
+                }
+                stream.write(hostMsg.get().bytes);
+                logger.info("host says: " + new String(hostMsg.get().bytes, "UTF-8"));
                 clearFromHost(SHARED_KEY);
+                logger.info("successfully cleared from host");
             } catch (Throwable t) {
-                t.printStackTrace();
+                logger.error("error in writeToSocket", t);
             }
         }
     }
 
     // we communicate with the host by writing to stdout.
     private static void readFromSocket(InputStream stream) throws Exception {
-        StreamHelpers.streamHandleAsAvailable(stream, data -> System.out.print(Base64.getEncoder().encodeToString(data.bytes)));
+        StreamHelpers.streamHandleAsAvailable(stream, data -> {
+                Try.run(() -> logger.info("remote says: {}", new String(data.bytes, "UTF-8")));
+                System.out.print(Base64.getEncoder().encodeToString(data.bytes));
+            });
     }
 
-    private static byte[] readFromHost(String key) throws IOException {
+    private static Option<StreamHelpers.ByteArray> readFromHost(String key) throws IOException {
         ProcessBuilder proc = new ProcessBuilder(
             VIRTUALBOX_FOLDER + "VBoxControl.exe", "guestproperty", "get", key);
         Process p = proc.start();
         // will probably base64-encode anyway as I use the command-line tools
         String data = new String(StreamHelpers.streamToByteArray(p.getInputStream()), "UTF-8");
         final String discriminator = "Value: ";
-        return Base64.getDecoder().decode(data.substring(data.indexOf(discriminator) + discriminator.length()));
+        if (data.indexOf(discriminator) < 0) {
+            return Option.none();
+        }
+        final String base64 = data
+            .substring(data.indexOf(discriminator) + discriminator.length())
+            .trim();
+        return Option.of(
+            new StreamHelpers.ByteArray(Base64.getDecoder().decode(base64)));
     }
 
     private static void clearFromHost(String key) throws Exception {
@@ -69,7 +86,8 @@ public class App {
 
     private static void waitForHost(String key) throws Exception {
         ProcessBuilder proc = new ProcessBuilder(
-            VIRTUALBOX_FOLDER + "VBoxControl.exe", "guestproperty", "wait", key);
+            VIRTUALBOX_FOLDER + "VBoxControl.exe", "guestproperty", "wait", key,
+            "--timeout", Integer.toString(WAIT_TIMEOUT_MS*1000));
         Process p = proc.start();
         p.waitFor();
     }
