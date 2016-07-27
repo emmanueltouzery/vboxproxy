@@ -1,8 +1,9 @@
 package com.github.emmanueltouzery.vboxproxycommon;
 
 import java.util.function.*;
-import java.io.*;
 import javaslang.collection.*;
+import java.io.*;
+import javaslang.control.*;
 
 public class StreamHelpers {
 
@@ -11,6 +12,20 @@ public class StreamHelpers {
 
         public ByteArray(byte[] data) {
             bytes = data;
+        }
+
+        public ByteArray(Seq<Byte> data) {
+            bytes = new byte[data.length()];
+            int i = 0;
+            for (byte b: data) {
+                bytes[i++] = b;
+            }
+        }
+
+        // for logging
+        @Override
+        public String toString() {
+            return Try.of(() -> new String(bytes, "UTF-8")).getOrElse("** not utf8 **");
         }
     }
 

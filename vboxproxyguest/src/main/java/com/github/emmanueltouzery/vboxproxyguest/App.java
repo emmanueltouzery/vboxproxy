@@ -17,10 +17,12 @@ public class App {
 
     private static final String VIRTUALBOX_FOLDER = "C:\\Program Files\\Oracle\\VirtualBox Guest Additions\\";
     private static final String SHARED_KEY = "testkey";
-    private static final String REMOTE_SERVER = "10.5.5.77";
-    // private static final String REMOTE_SERVER = "192.168.40.4";
-    private static final int REMOTE_PORT = 9080;
-    private static final int WAIT_TIMEOUT_MS = 1000;
+    // private static final String REMOTE_SERVER = "10.5.5.77";
+    // private static final int REMOTE_PORT = 9080;
+    private static final String REMOTE_SERVER = "192.168.40.4";
+    // private static final String REMOTE_SERVER = "10.5.5.69";
+    private static final int REMOTE_PORT = 22;
+    private static final int WAIT_TIMEOUT_MS = 500;
 
     private static final Logger logger = LoggerFactory.getLogger(App.class);
 
@@ -63,7 +65,7 @@ public class App {
                 String base64 = Base64.getEncoder().encodeToString(data.bytes);
                 Try.run(() -> logger.info("remote says: {} -- that's {} bytes long in base64.",
                                           StreamHelpers.summarize(new String(data.bytes, "UTF-8")), base64.length()));
-                System.out.print(base64);
+                Try.run(() -> System.out.write(data.bytes));
                 System.out.flush();
             }, t -> logger.error("error reading from socket", t));
     }
@@ -95,7 +97,7 @@ public class App {
     private static void waitForHost(String key) throws Exception {
         ProcessBuilder proc = new ProcessBuilder(
             VIRTUALBOX_FOLDER + "VBoxControl.exe", "guestproperty", "wait", key,
-            "--timeout", Integer.toString(WAIT_TIMEOUT_MS*1000));
+            "--timeout", Integer.toString(WAIT_TIMEOUT_MS));
         Process p = proc.start();
         p.waitFor();
     }

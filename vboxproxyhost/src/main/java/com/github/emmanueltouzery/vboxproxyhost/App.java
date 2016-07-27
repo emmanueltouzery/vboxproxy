@@ -24,6 +24,7 @@ public class App {
     private static final String GUEST_APP_CLASS = "com.github.emmanueltouzery.vboxproxyguest.App";
     private static final int PORT = 2222;
     private static final String SHARED_KEY = "testkey";
+    private static final int VBOX_GUEST_PROPERTIES_MAX_LENGTH = 80; // it's 128 according to GuestPropertySvc.h -- need to add 33% base64 overhead. That's 107 so still margins.
 
     private static final Logger logger = LoggerFactory.getLogger(App.class);
 
@@ -68,15 +69,23 @@ public class App {
 
     private static void queueMessage(String guestId, String key, StreamHelpers.ByteArray value) throws IOException {
         System.out.println("got message from socket client, forwarding to guest => " + StreamHelpers.summarize(new String(value.bytes, "UTF-8")));
-        pendingMessages.add(value);
+        Iterator<StreamHelpers.ByteArray> items = Array.ofAll(value.bytes)
+            .grouped(VBOX_GUEST_PROPERTIES_MAX_LENGTH)
+            .map(StreamHelpers.ByteArray::new);
+        // System.out.println(items.toList());
+        pendingMessages.addAll(items.toJavaList());
     }
 
-    private static void sendMessage(String guestId, String key, StreamHelpers.ByteArray value) throws IOException {
+    private static void sendMessage(String guestId, String key, StreamHelpers.ByteArray value) throws Exception {
         String encoded = Base64.getEncoder().encodeToString(value.bytes);
-        System.out.println("Sending to guest => " + value.bytes + " (length: " + encoded.length() + ")");
+        logger.info("Sending to guest => {} (length: {})",
+                    StreamHelpers.summarize(value.toString()), encoded.length());
         ProcessBuilder proc = new ProcessBuilder(
             "VBoxManage", "guestproperty", "set", guestId, key, encoded);
         Process p = proc.start();
+        // must wait until it's actually sent, or in my checks after this
+        // i'll see it's not present and think the guest already read it!
+        p.waitFor();
     }
 
     private static void messageSender(String guestId, String key) {
@@ -129,10 +138,8 @@ public class App {
         StreamHelpers.streamHandleAsAvailable(
             stream, bytes -> {
                 Try.run(() -> {
-                        String base64 = new String(bytes.bytes, "UTF-8");
-                        System.out.println("host: will give to down socket a base64 long " + base64.length() + " bytes");
-                        System.out.println("will give to down socket2 => " + StreamHelpers.summarize(new String(Base64.getDecoder().decode(base64), "UTF-8")));
-                        handler.accept(new StreamHelpers.ByteArray(Base64.getDecoder().decode(base64)));
+                        System.out.println("will give to down socket2 => " + StreamHelpers.summarize(new String(bytes.bytes, "UTF-8")));
+                        handler.accept(bytes);
                     }).orElseRun(x -> x.printStackTrace());
             },
             t -> t.printStackTrace());
