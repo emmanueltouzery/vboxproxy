@@ -2,6 +2,7 @@ package com.github.emmanueltouzery.vboxproxycommon;
 
 import java.util.function.*;
 import java.io.*;
+import javaslang.collection.*;
 
 public class StreamHelpers {
 
@@ -65,5 +66,10 @@ public class StreamHelpers {
         os.flush();
         os.close();
         return os.toByteArray();
+    }
+
+    public static String summarize(String data) {
+        Array<String> lines = Array.of(data.split("\n"));
+        return lines.head() + ((lines.length() > 5) ? ("\n<...>\n" + lines.drop(lines.length() - 4).mkString("\n")) : "");
     }
 }

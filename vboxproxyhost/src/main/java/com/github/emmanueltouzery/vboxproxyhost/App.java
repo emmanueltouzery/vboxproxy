@@ -9,6 +9,8 @@ import javaslang.*;
 import javaslang.collection.*;
 import java.net.*;
 import java.util.regex.*;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import com.github.emmanueltouzery.vboxproxycommon.*;
 
@@ -23,6 +25,8 @@ public class App {
     private static final int PORT = 2222;
     private static final String SHARED_KEY = "testkey";
 
+    private static final Logger logger = LoggerFactory.getLogger(App.class);
+
     private static ConcurrentLinkedQueue<StreamHelpers.ByteArray> pendingMessages = new ConcurrentLinkedQueue<>();
 
     public static void main(String[] args) throws Exception {
@@ -36,7 +40,7 @@ public class App {
         readerThread.start();
         Consumer<StreamHelpers.ByteArray> toClientWriter = data ->
             Try.run(() -> {
-                    System.out.println("writing to downsocket: " + new String(data.bytes, "UTF-8"));
+                    System.out.println("writing to downsocket: " + StreamHelpers.summarize(new String(data.bytes, "UTF-8")));
                     clientSocket.getOutputStream().write(data.bytes);
                     clientSocket.getOutputStream().flush();
                 });
@@ -63,7 +67,7 @@ public class App {
     }
 
     private static void queueMessage(String guestId, String key, StreamHelpers.ByteArray value) throws IOException {
-        System.out.println("got message from socket client, forwarding to guest => " + new String(value.bytes, "UTF-8"));
+        System.out.println("got message from socket client, forwarding to guest => " + StreamHelpers.summarize(new String(value.bytes, "UTF-8")));
         pendingMessages.add(value);
     }
 
@@ -83,6 +87,7 @@ public class App {
                 }
                 StreamHelpers.ByteArray msg = pendingMessages.peek();
                 if (msg != null) {
+                    logger.info("The guest read the previous message, putting the next one!");
                     sendMessage(guestId, key, msg);
                     pendingMessages.remove();
                 }
@@ -125,8 +130,8 @@ public class App {
             stream, bytes -> {
                 Try.run(() -> {
                         String base64 = new String(bytes.bytes, "UTF-8");
-                        System.out.println("will give to down socket => <" + base64 + ">");
-                        System.out.println("will give to down socket2 => " + Base64.getDecoder().decode(base64));
+                        System.out.println("host: will give to down socket a base64 long " + base64.length() + " bytes");
+                        System.out.println("will give to down socket2 => " + StreamHelpers.summarize(new String(Base64.getDecoder().decode(base64), "UTF-8")));
                         handler.accept(new StreamHelpers.ByteArray(Base64.getDecoder().decode(base64)));
                     }).orElseRun(x -> x.printStackTrace());
             },
