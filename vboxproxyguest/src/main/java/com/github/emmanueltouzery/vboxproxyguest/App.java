@@ -19,8 +19,8 @@ public class App {
     private static final String SHARED_KEY = "testkey";
     // private static final String REMOTE_SERVER = "10.5.5.77";
     // private static final int REMOTE_PORT = 9080;
-    private static final String REMOTE_SERVER = "192.168.40.4";
-    // private static final String REMOTE_SERVER = "10.5.5.69";
+    // private static final String REMOTE_SERVER = "192.168.40.4";
+    private static final String REMOTE_SERVER = "10.5.5.69";
     private static final int REMOTE_PORT = 22;
     private static final int WAIT_TIMEOUT_MS = 500;
 

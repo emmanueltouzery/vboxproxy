@@ -45,9 +45,6 @@ public class App {
 
         IGuestSession guestSession = guest.createSession(GUEST_USERNAME, "", "", "");
         guestSession.waitFor(1L, 0L);
-        guestSession.processCreate("c:\\windows\\notepad.exe", null, null, null, 0L);
-
-        session.unlockMachine();
 
         // pazi convert the byte[] to string.
         Socket clientSocket = openServerSocket(PORT);
@@ -66,11 +63,13 @@ public class App {
 
         System.out.println("before receiver thread");
         Thread receiverThread = new Thread(
-            () -> Try.run(() -> runGuestApp(GUEST_ID, GUEST_USERNAME, GUEST_APP_PATH, toClientWriter)));
+            () -> Try.run(() -> runGuestApp(mgr, guestSession, GUEST_APP_PATH, toClientWriter)));
         receiverThread.start();
 
         Thread sendingThread = new Thread(() -> messageSender(GUEST_ID, SHARED_KEY));
         sendingThread.start();
+
+        session.unlockMachine(); // ####
     }
 
     /**
@@ -146,20 +145,39 @@ public class App {
         }
     }
 
-    private static void runGuestApp(String guestId, String guestUser, String guestAppPath,
+    private static void runGuestApp(VirtualBoxManager mgr, IGuestSession guestSession, String guestAppPath,
                                     Consumer<StreamHelpers.ByteArray> handler) throws Exception {
-        ProcessBuilder proc = new ProcessBuilder(
-            "VBoxManage", "guestcontrol", "--username", guestUser, guestId, "run",
-            "--exe", GUEST_JAVA_PATH, "--wait-stdout", "--", "java", "-cp", guestAppPath + ";" + GUEST_LOGBACK_PATH, GUEST_APP_CLASS);
-        Process p = proc.start();
-        InputStream stream = p.getInputStream();
-        StreamHelpers.streamHandleAsAvailable(
-            stream, bytes -> {
-                Try.run(() -> {
-                        System.out.println("will give to down socket2 => " + StreamHelpers.summarize(new String(bytes.bytes, "UTF-8")));
-                        handler.accept(bytes);
-                    }).orElseRun(x -> x.printStackTrace());
-            },
-            t -> t.printStackTrace());
+        IGuestProcess proc = guestSession.processCreate(
+            GUEST_JAVA_PATH,
+            List.of("java", "-cp", guestAppPath + ";" + GUEST_LOGBACK_PATH, GUEST_APP_CLASS).toJavaList(),
+            null, List.of(ProcessCreateFlag.WaitForStdOut).toJavaList(), 0L);
+        ProcessWaitResult waitR = proc.waitForArray(List.of(ProcessWaitForFlag.Start).toJavaList(), 0L);
+        System.out.println("Guest process started: " + waitR);
+
+        while (true) {
+            try {
+                // waitR = proc.waitForArray(List.of(ProcessWaitForFlag.StdOut).toJavaList(), 0L);
+                // System.out.println("wait for stdout result => " + waitR);
+                Thread.sleep(50);
+                byte[] data = proc.read(1L, 64*1024L, 50L);
+                if (data.length > 0) {
+                    System.out.println("will give to down socket2 => " + StreamHelpers.summarize(new String(data, "UTF-8")));
+                    handler.accept(new StreamHelpers.ByteArray(data));
+                }
+                mgr.waitForEvents(0);
+            } catch (Throwable t) {
+                t.printStackTrace();
+            }
+        }
+
+        // InputStream stream = p.getInputStream();
+        // StreamHelpers.streamHandleAsAvailable(
+        //     stream, bytes -> {
+        //         Try.run(() -> {
+        //                 System.out.println("will give to down socket2 => " + StreamHelpers.summarize(new String(bytes.bytes, "UTF-8")));
+        //                 handler.accept(bytes);
+        //             }).orElseRun(x -> x.printStackTrace());
+        //     },
+        //     t -> t.printStackTrace());
     }
 }
