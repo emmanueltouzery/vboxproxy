@@ -11,6 +11,7 @@ import java.net.*;
 import java.util.regex.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.virtualbox_5_1.*;
 
 import com.github.emmanueltouzery.vboxproxycommon.*;
 
@@ -31,6 +32,23 @@ public class App {
     private static ConcurrentLinkedQueue<StreamHelpers.ByteArray> pendingMessages = new ConcurrentLinkedQueue<>();
 
     public static void main(String[] args) throws Exception {
+        VirtualBoxManager mgr = VirtualBoxManager.createInstance(null);
+        IVirtualBox vbox = mgr.getVBox();
+        System.out.println(vbox.getMachines());
+        IMachine machine = vbox.findMachine(GUEST_ID);
+        System.out.println(machine);
+
+        ISession session = mgr.getSessionObject();
+        machine.lockMachine(session, LockType.Shared);
+        IConsole console = session.getConsole();
+        IGuest guest = console.getGuest();
+
+        IGuestSession guestSession = guest.createSession(GUEST_USERNAME, "", "", "");
+        guestSession.waitFor(1L, 0L);
+        guestSession.processCreate("c:\\windows\\notepad.exe", null, null, null, 0L);
+
+        session.unlockMachine();
+
         // pazi convert the byte[] to string.
         Socket clientSocket = openServerSocket(PORT);
         InputStream clientIs = clientSocket.getInputStream();

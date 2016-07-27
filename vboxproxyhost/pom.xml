@@ -30,6 +30,12 @@
             <version>1.1.7</version>
             <type>jar</type>
         </dependency>
+        <dependency>
+            <groupId>org.virtualbox</groupId>
+            <artifactId>vboxjxpcom</artifactId>
+            <version>5.1</version>
+            <type>jar</type>
+        </dependency>
     </dependencies>
     <build>
         <plugins>
@@ -65,4 +71,17 @@
             </plugin>
         </plugins>
     </build>
+    <repositories>
+        <repository>
+            <id>libs</id>
+            <releases>
+                <enabled>true</enabled>
+                <checksumPolicy>ignore</checksumPolicy>
+            </releases>
+            <snapshots>
+                <enabled>false</enabled>
+            </snapshots>
+            <url>file://${project.basedir}/../libs</url>
+        </repository>
+    </repositories>
 </project>
