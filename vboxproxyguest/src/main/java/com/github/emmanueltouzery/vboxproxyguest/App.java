@@ -16,13 +16,16 @@ import com.github.emmanueltouzery.vboxproxycommon.*;
 public class App {
 
     private static final String VIRTUALBOX_FOLDER = "C:\\Program Files\\Oracle\\VirtualBox Guest Additions\\";
-    private static final String SHARED_KEY = "testkey";
     // private static final String REMOTE_SERVER = "10.5.5.77";
     // private static final int REMOTE_PORT = 9080;
-    private static final String REMOTE_SERVER = "192.168.40.4";
-    // private static final String REMOTE_SERVER = "10.5.5.69";
+    // private static final String REMOTE_SERVER = "192.168.40.4";
+    private static final String REMOTE_SERVER = "10.5.5.69";
     private static final int REMOTE_PORT = 22;
     private static final int WAIT_TIMEOUT_MS = 500;
+
+    private static final String SHARED_KEY = "testkey";
+    private static int nextKeyIndex = 0;
+    private static final int KEYS_COUNT = 16;
 
     private static final Logger logger = LoggerFactory.getLogger(App.class);
 
@@ -43,15 +46,17 @@ public class App {
     private static void writeToSocket(OutputStream stream) {
         while (true) {
             try {
-                logger.info("waiting for host message");
+                String actualKey = SHARED_KEY + nextKeyIndex;
+                nextKeyIndex = (nextKeyIndex + 1) % KEYS_COUNT;
+                logger.info("waiting for host message " + actualKey);
                 Option<StreamHelpers.ByteArray> hostMsg;
-                while ((hostMsg = readFromHost(SHARED_KEY)).isEmpty()) {
-                    waitForHost(SHARED_KEY);
+                while ((hostMsg = readFromHost(actualKey)).isEmpty()) {
+                    waitForHost(actualKey);
                 }
                 stream.write(hostMsg.get().bytes);
                 stream.flush();
                 logger.info("host says: " + new String(hostMsg.get().bytes, "UTF-8"));
-                clearFromHost(SHARED_KEY);
+                clearFromHost(actualKey);
                 logger.info("successfully cleared from host");
             } catch (Throwable t) {
                 logger.error("error in writeToSocket", t);

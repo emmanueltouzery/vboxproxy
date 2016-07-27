@@ -23,8 +23,11 @@ public class App {
     private static final String GUEST_LOGBACK_PATH = "e:";
     private static final String GUEST_APP_CLASS = "com.github.emmanueltouzery.vboxproxyguest.App";
     private static final int PORT = 2222;
-    private static final String SHARED_KEY = "testkey";
     private static final int VBOX_GUEST_PROPERTIES_MAX_LENGTH = 80; // it's 128 according to GuestPropertySvc.h -- need to add 33% base64 overhead. That's 107 so still margins.
+
+    private static final String SHARED_KEY = "testkey";
+    private static int nextKeyIndex = 0;
+    private static final int KEYS_COUNT = 16;
 
     private static final Logger logger = LoggerFactory.getLogger(App.class);
 
@@ -35,7 +38,7 @@ public class App {
         Socket clientSocket = openServerSocket(PORT);
         InputStream clientIs = clientSocket.getInputStream();
         Consumer<StreamHelpers.ByteArray> msgProcessor = bytes ->
-            Try.run(() -> queueMessage(GUEST_ID, SHARED_KEY, bytes));
+            Try.run(() -> queueMessage(GUEST_ID, bytes));
         Thread readerThread = new Thread(
             () -> StreamHelpers.streamHandleAsAvailable(clientIs, msgProcessor, t -> t.printStackTrace()));
         readerThread.start();
@@ -67,7 +70,7 @@ public class App {
         return serverSocket.accept();
     }
 
-    private static void queueMessage(String guestId, String key, StreamHelpers.ByteArray value) throws IOException {
+    private static void queueMessage(String guestId, StreamHelpers.ByteArray value) throws IOException {
         System.out.println("got message from socket client, forwarding to guest => " + StreamHelpers.summarize(new String(value.bytes, "UTF-8")));
         Iterator<StreamHelpers.ByteArray> items = Array.ofAll(value.bytes)
             .grouped(VBOX_GUEST_PROPERTIES_MAX_LENGTH)
@@ -91,14 +94,16 @@ public class App {
     private static void messageSender(String guestId, String key) {
         while (true) {
             try {
-                while (!guestDidReadPreviousMessage(guestId, key)) {
+                String actualKey = key + nextKeyIndex;
+                while (!guestDidReadPreviousMessage(guestId, actualKey)) {
                     Thread.sleep(10);
                 }
                 StreamHelpers.ByteArray msg = pendingMessages.peek();
                 if (msg != null) {
-                    logger.info("The guest read the previous message, putting the next one!");
-                    sendMessage(guestId, key, msg);
+                    logger.info("The guest read the previous message, putting the next one! " + actualKey);
+                    sendMessage(guestId, actualKey, msg);
                     pendingMessages.remove();
+                    nextKeyIndex = (nextKeyIndex + 1) % KEYS_COUNT;
                 }
             } catch (Throwable t) {
                 t.printStackTrace();
