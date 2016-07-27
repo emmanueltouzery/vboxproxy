@@ -96,7 +96,7 @@ public class App {
         ProcessBuilder proc = new ProcessBuilder(
             VIRTUALBOX_FOLDER + "VBoxControl.exe", "guestproperty", "delete", key);
         Process p = proc.start();
-        p.waitFor();
+        // p.waitFor(); // optimization.
     }
 
     private static void waitForHost(String key) throws Exception {
