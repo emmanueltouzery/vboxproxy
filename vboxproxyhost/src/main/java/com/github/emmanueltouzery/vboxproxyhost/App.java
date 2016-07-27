@@ -156,7 +156,7 @@ public class App {
 
         while (true) {
             try {
-                // waitR = proc.waitForArray(List.of(ProcessWaitForFlag.StdOut).toJavaList(), 0L);
+                waitR = proc.waitForArray(List.of(ProcessWaitForFlag.StdOut, ProcessWaitForFlag.Terminate).toJavaList(), 50L);
                 // System.out.println("wait for stdout result => " + waitR);
                 Thread.sleep(50);
                 byte[] data = proc.read(1L, 64*1024L, 50L);
