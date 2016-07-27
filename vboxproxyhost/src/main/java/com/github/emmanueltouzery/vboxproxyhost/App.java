@@ -23,7 +23,7 @@ public class App {
     private static final String GUEST_LOGBACK_PATH = "e:";
     private static final String GUEST_APP_CLASS = "com.github.emmanueltouzery.vboxproxyguest.App";
     private static final int PORT = 2222;
-    private static final int VBOX_GUEST_PROPERTIES_MAX_LENGTH = 80; // it's 128 according to GuestPropertySvc.h -- need to add 33% base64 overhead. That's 107 so still margins.
+    private static final int VBOX_GUEST_PROPERTIES_MAX_LENGTH = 98; // it's 128 according to GuestPropertySvc.h -- need to add 33% base64 overhead.
 
     private static final String SHARED_KEY = "testkey";
     private static int nextKeyIndex = 0;
@@ -96,6 +96,7 @@ public class App {
             try {
                 String actualKey = key + nextKeyIndex;
                 while (!guestDidReadPreviousMessage(guestId, actualKey)) {
+                    System.out.println("guest didn't read yet!!");
                     Thread.sleep(10);
                 }
                 StreamHelpers.ByteArray msg = pendingMessages.peek();
