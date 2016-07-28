@@ -19,7 +19,6 @@ public class App {
     private static final String VIRTUALBOX_FOLDER = "C:\\Program Files\\Oracle\\VirtualBox Guest Additions\\";
     private static final int WAIT_TIMEOUT_MS = 500;
 
-    private static final String SHARED_KEY = "testkey";
     private static int nextKeyIndex = 0;
     private static final int KEYS_COUNT = 16;
 
@@ -45,13 +44,14 @@ public class App {
         final OutputStream socketOs = socket.getOutputStream();
         final InputStream socketIs = socket.getInputStream();
 
-        Thread socketWriterThread = new Thread(() -> writeToSocket(socketOs));
+        Thread socketWriterThread = new Thread(
+            () -> writeToSocket(params.getCommunicationKey(), socketOs));
         socketWriterThread.start();
 
         Thread socketReaderThread = new Thread(() -> readFromSocket(socketIs));
         socketReaderThread.start();
 
-        String killSwitchKey = getKillSwitchPropName(SHARED_KEY);
+        String killSwitchKey = getKillSwitchPropName(params.getCommunicationKey());
         while (true) {
             waitForHost(killSwitchKey);
             if (readFromHost(killSwitchKey)
@@ -69,10 +69,10 @@ public class App {
     }
 
     // we communicate with the host through guest properties.
-    private static void writeToSocket(OutputStream stream) {
+    private static void writeToSocket(String baseKey, OutputStream stream) {
         while (true) {
             try {
-                String actualKey = SHARED_KEY + nextKeyIndex;
+                String actualKey = baseKey + nextKeyIndex;
                 nextKeyIndex = (nextKeyIndex + 1) % KEYS_COUNT;
                 logger.info("waiting for host message " + actualKey);
                 Option<StreamHelpers.ByteArray> hostMsg;

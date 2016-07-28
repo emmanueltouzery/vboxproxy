@@ -10,6 +10,9 @@ public class CommandlineParams {
     @Parameter(names="--remoteServerPort", required=true)
     private Integer remoteServerPort;
 
+    @Parameter(names="--communicationKey", required=true)
+    private String communicationKey;
+
     @Parameter(names = { "--help", "-help", "-?", "/?" }, help = true)
     private boolean help;
 
@@ -19,6 +22,10 @@ public class CommandlineParams {
 
     public int getRemoteServerPort() {
         return remoteServerPort;
+    }
+
+    public String getCommunicationKey() {
+        return communicationKey;
     }
 
     public boolean isHelp() {

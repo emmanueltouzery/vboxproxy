@@ -4,6 +4,7 @@ import java.io.*;
 import java.util.Base64;
 import java.util.function.*;
 import java.util.concurrent.*;
+import java.util.UUID;
 import javaslang.control.*;
 import javaslang.*;
 import javaslang.collection.*;
@@ -27,7 +28,6 @@ public class App {
     // on the other hand looking at VBoxServiceUtils.cpp/VGSvcReadProp it could be 1k. Then 768
     private static final int VBOX_GUEST_PROPERTIES_MAX_LENGTH = 49000;
 
-    private static final String SHARED_KEY = "testkey";
     private static int nextKeyIndex = 0;
     private static final int KEYS_COUNT = 16;
 
@@ -36,8 +36,10 @@ public class App {
     private static ConcurrentLinkedQueue<StreamHelpers.ByteArray> pendingMessages = new ConcurrentLinkedQueue<>();
 
     public static void main(String[] args) throws Exception {
-        clearLeftoverProperties();
-        clearGuestProperty(GUEST_ID, getKillSwitchPropName(SHARED_KEY));
+        final String communicationKey = UUID.randomUUID().toString();
+
+        clearLeftoverProperties(communicationKey);
+        clearGuestProperty(GUEST_ID, getKillSwitchPropName(communicationKey));
 
         CommandlineParams params = new CommandlineParams();
         try {
@@ -71,14 +73,14 @@ public class App {
         Thread receiverThread = new Thread(
             () -> Try.run(() -> runGuestApp(GUEST_ID, GUEST_USERNAME, GUEST_APP_PATH,
                                             params.getRemoteServerIp(), params.getRemoteServerPort(),
-                                            toClientWriter)));
+                                            communicationKey, toClientWriter)));
         receiverThread.start();
 
-        Thread sendingThread = new Thread(() -> messageSender(GUEST_ID, SHARED_KEY));
+        Thread sendingThread = new Thread(() -> messageSender(GUEST_ID, communicationKey));
         sendingThread.start();
 
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-                    Try.run(() -> killGuestApp(SHARED_KEY));
+                    Try.run(() -> killGuestApp(communicationKey));
                     System.out.println("sent the kill switch to the client");
         }));
     }
@@ -92,9 +94,9 @@ public class App {
                     new StreamHelpers.ByteArray("bye".getBytes()));
     }
 
-    private static void clearLeftoverProperties() throws Exception {
+    private static void clearLeftoverProperties(String communicationKey) throws Exception {
         for (int i=0;i<KEYS_COUNT;i++) {
-            clearGuestProperty(GUEST_ID, SHARED_KEY + i);
+            clearGuestProperty(GUEST_ID, communicationKey + i);
         }
     }
 
@@ -183,12 +185,15 @@ public class App {
 
     private static void runGuestApp(String guestId, String guestUser, String guestAppPath,
                                     String remoteServerIp, int remoteServerPort,
+                                    String communicationKey,
                                     Consumer<StreamHelpers.ByteArray> handler) throws Exception {
         ProcessBuilder proc = new ProcessBuilder(
             "VBoxManage", "guestcontrol", "--username", guestUser, guestId, "run",
             "--exe", GUEST_JAVA_PATH, "--wait-stdout", "--",
             "java", "-cp", guestAppPath + ";" + GUEST_LOGBACK_PATH, GUEST_APP_CLASS,
-            "--remoteServerIp", remoteServerIp, "--remoteServerPort", Integer.toString(remoteServerPort));
+            "--remoteServerIp", remoteServerIp,
+            "--remoteServerPort", Integer.toString(remoteServerPort),
+            "--communicationKey", communicationKey);
         Process p = proc.start();
         InputStream stream = p.getInputStream();
         StreamHelpers.streamHandleAsAvailable(
