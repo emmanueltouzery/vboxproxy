@@ -19,7 +19,8 @@ public class App {
     // private static final String REMOTE_SERVER = "10.5.5.77";
     // private static final int REMOTE_PORT = 9080;
     // private static final String REMOTE_SERVER = "192.168.40.4";
-    private static final String REMOTE_SERVER = "10.5.5.69";
+    // private static final String REMOTE_SERVER = "10.5.5.69";
+    private static final String REMOTE_SERVER = "192.168.140.5";
     private static final int REMOTE_PORT = 22;
     private static final int WAIT_TIMEOUT_MS = 500;
 
@@ -67,9 +68,8 @@ public class App {
     // we communicate with the host by writing to stdout.
     private static void readFromSocket(InputStream stream) {
         StreamHelpers.streamHandleAsAvailable(stream, data -> {
-                String base64 = Base64.getEncoder().encodeToString(data.bytes);
-                Try.run(() -> logger.info("remote says: {} -- that's {} bytes long in base64.",
-                                          StreamHelpers.summarize(new String(data.bytes, "UTF-8")), base64.length()));
+                Try.run(() -> logger.info("remote says: {}.",
+                                          StreamHelpers.summarize(new String(data.bytes, "UTF-8"))));
                 Try.run(() -> System.out.write(data.bytes));
                 System.out.flush();
             }, t -> logger.error("error reading from socket", t));
