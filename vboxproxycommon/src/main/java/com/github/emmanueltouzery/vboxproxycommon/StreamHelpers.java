@@ -25,7 +25,9 @@ public class StreamHelpers {
         // for logging
         @Override
         public String toString() {
-            return Try.of(() -> new String(bytes, "UTF-8")).getOrElse("** not utf8 **");
+            return Try.of(() -> new String(bytes, "UTF-8")
+                          .replaceAll("\\p{C}", "?")) // http://stackoverflow.com/a/6199346/516188
+                .getOrElse("** not utf8 **");
         }
     }
 
