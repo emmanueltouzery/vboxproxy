@@ -37,6 +37,7 @@ public class App {
 
     public static void main(String[] args) throws Exception {
         clearLeftoverProperties();
+        clearGuestProperty(GUEST_ID, getKillSwitchPropName(SHARED_KEY));
 
         CommandlineParams params = new CommandlineParams();
         try {
@@ -75,6 +76,20 @@ public class App {
 
         Thread sendingThread = new Thread(() -> messageSender(GUEST_ID, SHARED_KEY));
         sendingThread.start();
+
+        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+                    Try.run(() -> killGuestApp(SHARED_KEY));
+                    System.out.println("sent the kill switch to the client");
+        }));
+    }
+
+    private static String getKillSwitchPropName(String baseKey) {
+        return baseKey + "_killswitch";
+    }
+
+    private static void killGuestApp(String baseKey) throws Exception {
+        sendMessage(GUEST_ID, getKillSwitchPropName(baseKey),
+                    new StreamHelpers.ByteArray("bye".getBytes()));
     }
 
     private static void clearLeftoverProperties() throws Exception {
@@ -106,8 +121,8 @@ public class App {
 
     private static void sendMessage(String guestId, String key, StreamHelpers.ByteArray value) throws Exception {
         String encoded = Base64.getEncoder().encodeToString(value.bytes);
-        logger.info("Sending to guest => {} (length: {})",
-                    StreamHelpers.summarize(value.toString()), encoded.length());
+        logger.info("Sending to guest on key {} => {} (length: {})",
+                    key, StreamHelpers.summarize(value.toString()), encoded.length());
         ProcessBuilder proc = new ProcessBuilder(
             "VBoxManage", "guestproperty", "set", guestId, key, encoded);
         Process p = proc.start();

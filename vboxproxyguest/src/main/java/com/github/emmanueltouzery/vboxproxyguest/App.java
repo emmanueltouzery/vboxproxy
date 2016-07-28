@@ -50,6 +50,22 @@ public class App {
 
         Thread socketReaderThread = new Thread(() -> readFromSocket(socketIs));
         socketReaderThread.start();
+
+        String killSwitchKey = getKillSwitchPropName(SHARED_KEY);
+        while (true) {
+            waitForHost(killSwitchKey);
+            if (readFromHost(killSwitchKey)
+                .map(ba -> ba.bytes)
+                .contains("bye".getBytes())) {
+                logger.info("Received the kill switch, going away.");
+                clearFromHost(killSwitchKey);
+                System.exit(0);
+            }
+        }
+    }
+
+    private static String getKillSwitchPropName(String baseKey) {
+        return baseKey + "_killswitch";
     }
 
     // we communicate with the host through guest properties.
@@ -109,7 +125,7 @@ public class App {
     }
 
     private static void waitForHost(String key) throws Exception {
-        logger.info("Waiting for host");
+        logger.info("Waiting for host, key {}", key);
         ProcessBuilder proc = new ProcessBuilder(
             VIRTUALBOX_FOLDER + "VBoxControl.exe", "guestproperty", "wait", key,
             "--timeout", Integer.toString(WAIT_TIMEOUT_MS));
