@@ -29,17 +29,19 @@ public class App {
     private static final int VBOX_GUEST_PROPERTIES_MAX_LENGTH = 49000;
 
     private static int nextKeyIndex = 0;
-    private static final int KEYS_COUNT = 16;
+    private static int socketCount = 0;
 
     private static final Logger logger = LoggerFactory.getLogger(App.class);
 
-    private static ConcurrentLinkedQueue<StreamHelpers.ByteArray> pendingMessages = new ConcurrentLinkedQueue<>();
+    private static Vector<SocketClientHandler> socketClientHandlers = Vector.empty();
+
+    private static final GuestMessagesProcessor guestMessageProcessor = new GuestMessagesProcessor();
 
     public static void main(String[] args) throws Exception {
         final String communicationKey = UUID.randomUUID().toString();
 
         clearLeftoverProperties(communicationKey);
-        clearGuestProperty(GUEST_ID, getKillSwitchPropName(communicationKey));
+        clearGuestProperty(GUEST_ID, SharedItems.getKillSwitchPropName(communicationKey));
 
         CommandlineParams params = new CommandlineParams();
         try {
@@ -54,19 +56,11 @@ public class App {
             System.exit(1);
         }
 
-        // pazi convert the byte[] to string.
-        Socket clientSocket = openServerSocket(params.getPort());
-        InputStream clientIs = clientSocket.getInputStream();
-        Consumer<StreamHelpers.ByteArray> msgProcessor = bytes ->
-            Try.run(() -> queueMessage(GUEST_ID, bytes));
-        Thread readerThread = new Thread(
-            () -> StreamHelpers.streamHandleAsAvailable(clientIs, msgProcessor, t -> t.printStackTrace()));
-        readerThread.start();
-        Consumer<StreamHelpers.ByteArray> toClientWriter = data ->
+        openServerSocket(params.getPort(), App::handleClient);
+
+        Consumer<ByteArray> toClientWriter = data ->
             Try.run(() -> {
-                    System.out.println("writing to downsocket: " + StreamHelpers.summarize(new String(data.bytes, "UTF-8")));
-                    clientSocket.getOutputStream().write(data.bytes);
-                    clientSocket.getOutputStream().flush();
+                    guestMessagesProcessor.receivedFromGuest(data);
                 });
 
         System.out.println("before receiver thread");
@@ -76,8 +70,8 @@ public class App {
                                             communicationKey, toClientWriter)));
         receiverThread.start();
 
-        Thread sendingThread = new Thread(() -> messageSender(GUEST_ID, communicationKey));
-        sendingThread.start();
+        Thread guestMessagesProcessor = new Thread(App::processGuestMessages);
+        guestMessagesProcessor.start();
 
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
                     Try.run(() -> killGuestApp(communicationKey));
@@ -85,18 +79,103 @@ public class App {
         }));
     }
 
-    private static String getKillSwitchPropName(String baseKey) {
-        return baseKey + "_killswitch";
+    private static void handleClient(Socket socket, int socketIndex) {
+        final SocketClientHandler socketHandler = new SocketClientHandler(socket, socketIndex);
+         socketClientHandlers = socketClientHandlers.add(socketHandler);
+        socketHandler.processMessages();
+    }
+
+    private static void processGuestMessages() {
+        while (true) {
+            // TODO is busy looping OK? a lot of this in the app :S
+            guestMessagesProcessor.decodeNext()
+                .flatMap(
+                    nextMsgInfo -> socketClientHandlers.find(socketHandler -> socketHandler.clientSocket == nextMsgInfo.socketIdx)
+                    .map(socketClientHandler -> {
+                            if (socketClientHandler.isEmpty()) {
+                                logger.warn("Can't get a socket to which to write a guest's response to. Assuming it died.");
+                            } else {
+                                System.out.println("writing to downsocket: " + StreamHelpers.summarize(new String(nextMsgInfo.msg.bytes, "UTF-8")));
+                                socketClientHandler.get().clientSocket.write(nextMsgInfo.msg.bytes);
+                                socketClientHandler.get().clientSocket.flush();
+                            }
+                        }));
+        }
+    }
+
+    private static class SocketClientHandler {
+
+        private ConcurrentLinkedQueue<ByteArray> pendingMessages
+            = new ConcurrentLinkedQueue<>();
+
+        private final Socket clientSocket;
+        private final int socketIndex;
+        private final Thread readerThread;
+        private final Thread sendingThread;
+
+        public SocketClientHandler(Socket clientSocket, int socketIndex) {
+            this.clientSocket = clientSocket;
+            this.socketIndex = socketIndex;
+
+            InputStream clientIs = clientSocket.getInputStream();
+            Consumer<ByteArray> msgProcessor = bytes ->
+                Try.run(() -> queueMessage(GUEST_ID, bytes));
+            readerThread = new Thread(
+                () -> StreamHelpers.streamHandleAsAvailable(clientIs, msgProcessor, Throwable::printStackTrace));
+            sendingThread = new Thread(() -> messageSender(GUEST_ID, socketIndex, communicationKey));
+        }
+
+        public void processMessages() {
+            readerThread.start();
+            sendingThread.start();
+        }
+
+        private void queueMessage(String guestId, ByteArray value) throws IOException {
+            System.out.println("got message from socket client, forwarding to guest => " + StreamHelpers.summarize(new String(value.bytes, "UTF-8")));
+            Iterator<ByteArray> items = Array.ofAll(value.bytes)
+                .grouped(VBOX_GUEST_PROPERTIES_MAX_LENGTH)
+                .map(ByteArray::new);
+            // System.out.println(items.toList());
+            pendingMessages.addAll(items.toJavaList());
+        }
+
+        private void messageSender(String guestId, int socket, String key) {
+            while (true) {
+                try {
+                    String actualKey = SharedItems.getDataPropName(key, socket, nextKeyIndex);
+                    while (!guestDidReadPreviousMessage(guestId, actualKey)) {
+                        System.out.println("guest didn't read yet!!");
+                        Thread.sleep(10);
+                    }
+                    ByteArray msg = pendingMessages.peek();
+                    if (msg != null) {
+                        logger.info("The guest read the previous message, putting the next one! " + actualKey);
+                        sendMessage(guestId, actualKey, msg);
+                        pendingMessages.remove();
+                        nextKeyIndex = (nextKeyIndex + 1) % SharedItems.KEYS_COUNT;
+                    }
+                } catch (Throwable t) {
+                    t.printStackTrace();
+                }
+            }
+        }
+    }
+
+    private static void notifyGuestSocketCount() throws Exception {
+        sendMessage(GUEST_ID, SharedItems.getSocketsCountPropName(communicationKey),
+                    new ByteArray(Integer.toString(socketCount).getBytes()));
     }
 
     private static void killGuestApp(String baseKey) throws Exception {
-        sendMessage(GUEST_ID, getKillSwitchPropName(baseKey),
-                    new StreamHelpers.ByteArray("bye".getBytes()));
+        sendMessage(GUEST_ID, SharedItems.getKillSwitchPropName(baseKey),
+                    new ByteArray("bye".getBytes()));
     }
 
     private static void clearLeftoverProperties(String communicationKey) throws Exception {
-        for (int i=0;i<KEYS_COUNT;i++) {
-            clearGuestProperty(GUEST_ID, communicationKey + i);
+        for (int register=0;register<SharedItems.KEYS_COUNT;register++) {
+            for (int socket=0;socket<64;socket++) {
+                clearGuestProperty(GUEST_ID, SharedItems.getDataPropName(communicationKey, socket, register));
+            }
         }
     }
 
@@ -106,22 +185,18 @@ public class App {
      * @return a consumer allowing you to write to the
      *         client socket.
      */
-    private static Socket openServerSocket(int port) throws IOException {
+    private static void openServerSocket(int port, BiConsumer<Socket, Integer> handler) throws IOException {
         // TODO try-with-resources?
         ServerSocket serverSocket = new ServerSocket(port);
-        return serverSocket.accept();
+        while (true) {
+            Socket socket = serverSocket.accept();
+            ++socketCount;
+            notifyGuestSocketCount();
+            (new Thread(() -> handler.accept(socket, socketCount))).start();
+        }
     }
 
-    private static void queueMessage(String guestId, StreamHelpers.ByteArray value) throws IOException {
-        System.out.println("got message from socket client, forwarding to guest => " + StreamHelpers.summarize(new String(value.bytes, "UTF-8")));
-        Iterator<StreamHelpers.ByteArray> items = Array.ofAll(value.bytes)
-            .grouped(VBOX_GUEST_PROPERTIES_MAX_LENGTH)
-            .map(StreamHelpers.ByteArray::new);
-        // System.out.println(items.toList());
-        pendingMessages.addAll(items.toJavaList());
-    }
-
-    private static void sendMessage(String guestId, String key, StreamHelpers.ByteArray value) throws Exception {
+    private static void sendMessage(String guestId, String key, ByteArray value) throws Exception {
         String encoded = Base64.getEncoder().encodeToString(value.bytes);
         logger.info("Sending to guest on key {} => {} (length: {})",
                     key, StreamHelpers.summarize(value.toString()), encoded.length());
@@ -131,27 +206,6 @@ public class App {
         // must wait until it's actually sent, or in my checks after this
         // i'll see it's not present and think the guest already read it!
         p.waitFor();
-    }
-
-    private static void messageSender(String guestId, String key) {
-        while (true) {
-            try {
-                String actualKey = key + nextKeyIndex;
-                while (!guestDidReadPreviousMessage(guestId, actualKey)) {
-                    System.out.println("guest didn't read yet!!");
-                    Thread.sleep(10);
-                }
-                StreamHelpers.ByteArray msg = pendingMessages.peek();
-                if (msg != null) {
-                    logger.info("The guest read the previous message, putting the next one! " + actualKey);
-                    sendMessage(guestId, actualKey, msg);
-                    pendingMessages.remove();
-                    nextKeyIndex = (nextKeyIndex + 1) % KEYS_COUNT;
-                }
-            } catch (Throwable t) {
-                t.printStackTrace();
-            }
-        }
     }
 
     private static boolean guestDidReadPreviousMessage(String guestId, String key) throws IOException {
@@ -186,7 +240,7 @@ public class App {
     private static void runGuestApp(String guestId, String guestUser, String guestAppPath,
                                     String remoteServerIp, int remoteServerPort,
                                     String communicationKey,
-                                    Consumer<StreamHelpers.ByteArray> handler) throws Exception {
+                                    Consumer<ByteArray> handler) throws Exception {
         ProcessBuilder proc = new ProcessBuilder(
             "VBoxManage", "guestcontrol", "--username", guestUser, guestId, "run",
             "--exe", GUEST_JAVA_PATH, "--wait-stdout", "--",

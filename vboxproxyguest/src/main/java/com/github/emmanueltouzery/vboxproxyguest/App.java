@@ -20,7 +20,6 @@ public class App {
     private static final int WAIT_TIMEOUT_MS = 500;
 
     private static int nextKeyIndex = 0;
-    private static final int KEYS_COUNT = 16;
 
     private static final Logger logger = LoggerFactory.getLogger(App.class);
 
@@ -51,7 +50,7 @@ public class App {
         Thread socketReaderThread = new Thread(() -> readFromSocket(socketIs));
         socketReaderThread.start();
 
-        String killSwitchKey = getKillSwitchPropName(params.getCommunicationKey());
+        String killSwitchKey = SharedItems.getKillSwitchPropName(params.getCommunicationKey());
         while (true) {
             waitForHost(killSwitchKey);
             if (readFromHost(killSwitchKey)
@@ -64,16 +63,12 @@ public class App {
         }
     }
 
-    private static String getKillSwitchPropName(String baseKey) {
-        return baseKey + "_killswitch";
-    }
-
     // we communicate with the host through guest properties.
     private static void writeToSocket(String baseKey, OutputStream stream) {
         while (true) {
             try {
                 String actualKey = baseKey + nextKeyIndex;
-                nextKeyIndex = (nextKeyIndex + 1) % KEYS_COUNT;
+                nextKeyIndex = (nextKeyIndex + 1) % SharedItems.KEYS_COUNT;
                 logger.info("waiting for host message " + actualKey);
                 Option<StreamHelpers.ByteArray> hostMsg;
                 while ((hostMsg = readFromHost(actualKey)).isEmpty()) {
