@@ -1,5 +1,6 @@
 package com.github.emmanueltouzery.vboxproxyguest;
 
+import com.beust.jcommander.JCommander;
 import java.io.*;
 import java.util.*;
 import java.util.function.*;
@@ -16,12 +17,6 @@ import com.github.emmanueltouzery.vboxproxycommon.*;
 public class App {
 
     private static final String VIRTUALBOX_FOLDER = "C:\\Program Files\\Oracle\\VirtualBox Guest Additions\\";
-    // private static final String REMOTE_SERVER = "10.5.5.77";
-    // private static final int REMOTE_PORT = 9080;
-    // private static final String REMOTE_SERVER = "192.168.40.4";
-    // private static final String REMOTE_SERVER = "10.5.5.69";
-    private static final String REMOTE_SERVER = "192.168.140.5";
-    private static final int REMOTE_PORT = 22;
     private static final int WAIT_TIMEOUT_MS = 500;
 
     private static final String SHARED_KEY = "testkey";
@@ -30,9 +25,23 @@ public class App {
 
     private static final Logger logger = LoggerFactory.getLogger(App.class);
 
-    public static void main(String[] argv) throws Exception {
+    public static void main(String[] args) throws Exception {
         logger.info("\n\n\n######## vboxproxyguest starting!");
-        Socket socket = new Socket(REMOTE_SERVER, REMOTE_PORT);
+
+        CommandlineParams params = new CommandlineParams();
+        try {
+            JCommander jc = new JCommander(params);
+            jc.parse(args);
+            if (params.isHelp()) {
+                jc.usage();
+                System.exit(0);
+            }
+        } catch (Exception ex) {
+            logger.error("Error parsing command-line parameters", ex);
+            System.exit(1);
+        }
+
+        Socket socket = new Socket(params.getRemoteServerIp(), params.getRemoteServerPort());
         final OutputStream socketOs = socket.getOutputStream();
         final InputStream socketIs = socket.getInputStream();
 

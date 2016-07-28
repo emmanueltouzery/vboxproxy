@@ -11,6 +11,7 @@ import java.net.*;
 import java.util.regex.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import com.beust.jcommander.JCommander;
 
 import com.github.emmanueltouzery.vboxproxycommon.*;
 
@@ -22,7 +23,6 @@ public class App {
     private static final String GUEST_APP_PATH = "e:\\vboxproxyguest-1.0-SNAPSHOT.jar";
     private static final String GUEST_LOGBACK_PATH = "e:";
     private static final String GUEST_APP_CLASS = "com.github.emmanueltouzery.vboxproxyguest.App";
-    private static final int PORT = 2222;
     // it's 128 according to GuestPropertySvc.h -- need to add 33% base64 overhead so 98.
     // on the other hand looking at VBoxServiceUtils.cpp/VGSvcReadProp it could be 1k. Then 768
     private static final int VBOX_GUEST_PROPERTIES_MAX_LENGTH = 49000;
@@ -38,8 +38,21 @@ public class App {
     public static void main(String[] args) throws Exception {
         clearLeftoverProperties();
 
+        CommandlineParams params = new CommandlineParams();
+        try {
+            JCommander jc = new JCommander(params);
+            jc.parse(args);
+            if (params.isHelp()) {
+                jc.usage();
+                System.exit(0);
+            }
+        } catch (Exception ex) {
+            logger.error("Error parsing command-line parameters", ex);
+            System.exit(1);
+        }
+
         // pazi convert the byte[] to string.
-        Socket clientSocket = openServerSocket(PORT);
+        Socket clientSocket = openServerSocket(params.getPort());
         InputStream clientIs = clientSocket.getInputStream();
         Consumer<StreamHelpers.ByteArray> msgProcessor = bytes ->
             Try.run(() -> queueMessage(GUEST_ID, bytes));
@@ -55,7 +68,9 @@ public class App {
 
         System.out.println("before receiver thread");
         Thread receiverThread = new Thread(
-            () -> Try.run(() -> runGuestApp(GUEST_ID, GUEST_USERNAME, GUEST_APP_PATH, toClientWriter)));
+            () -> Try.run(() -> runGuestApp(GUEST_ID, GUEST_USERNAME, GUEST_APP_PATH,
+                                            params.getRemoteServerIp(), params.getRemoteServerPort(),
+                                            toClientWriter)));
         receiverThread.start();
 
         Thread sendingThread = new Thread(() -> messageSender(GUEST_ID, SHARED_KEY));
@@ -152,10 +167,13 @@ public class App {
     }
 
     private static void runGuestApp(String guestId, String guestUser, String guestAppPath,
+                                    String remoteServerIp, int remoteServerPort,
                                     Consumer<StreamHelpers.ByteArray> handler) throws Exception {
         ProcessBuilder proc = new ProcessBuilder(
             "VBoxManage", "guestcontrol", "--username", guestUser, guestId, "run",
-            "--exe", GUEST_JAVA_PATH, "--wait-stdout", "--", "java", "-cp", guestAppPath + ";" + GUEST_LOGBACK_PATH, GUEST_APP_CLASS);
+            "--exe", GUEST_JAVA_PATH, "--wait-stdout", "--",
+            "java", "-cp", guestAppPath + ";" + GUEST_LOGBACK_PATH, GUEST_APP_CLASS,
+            "--remoteServerIp", remoteServerIp, "--remoteServerPort", Integer.toString(remoteServerPort));
         Process p = proc.start();
         InputStream stream = p.getInputStream();
         StreamHelpers.streamHandleAsAvailable(
