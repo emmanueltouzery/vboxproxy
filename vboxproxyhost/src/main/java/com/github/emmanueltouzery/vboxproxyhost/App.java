@@ -23,7 +23,9 @@ public class App {
     private static final String GUEST_LOGBACK_PATH = "e:";
     private static final String GUEST_APP_CLASS = "com.github.emmanueltouzery.vboxproxyguest.App";
     private static final int PORT = 2222;
-    private static final int VBOX_GUEST_PROPERTIES_MAX_LENGTH = 98; // it's 128 according to GuestPropertySvc.h -- need to add 33% base64 overhead.
+    // it's 128 according to GuestPropertySvc.h -- need to add 33% base64 overhead so 98.
+    // on the other hand looking at VBoxServiceUtils.cpp/VGSvcReadProp it could be 1k. Then 768
+    private static final int VBOX_GUEST_PROPERTIES_MAX_LENGTH = 768;
 
     private static final String SHARED_KEY = "testkey";
     private static int nextKeyIndex = 0;

@@ -100,6 +100,7 @@ public class App {
     }
 
     private static void waitForHost(String key) throws Exception {
+        logger.info("Waiting for host");
         ProcessBuilder proc = new ProcessBuilder(
             VIRTUALBOX_FOLDER + "VBoxControl.exe", "guestproperty", "wait", key,
             "--timeout", Integer.toString(WAIT_TIMEOUT_MS));
