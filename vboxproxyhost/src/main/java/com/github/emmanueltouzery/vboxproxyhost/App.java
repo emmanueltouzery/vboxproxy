@@ -25,7 +25,7 @@ public class App {
     private static final int PORT = 2222;
     // it's 128 according to GuestPropertySvc.h -- need to add 33% base64 overhead so 98.
     // on the other hand looking at VBoxServiceUtils.cpp/VGSvcReadProp it could be 1k. Then 768
-    private static final int VBOX_GUEST_PROPERTIES_MAX_LENGTH = 768;
+    private static final int VBOX_GUEST_PROPERTIES_MAX_LENGTH = 49000;
 
     private static final String SHARED_KEY = "testkey";
     private static int nextKeyIndex = 0;
@@ -36,6 +36,8 @@ public class App {
     private static ConcurrentLinkedQueue<StreamHelpers.ByteArray> pendingMessages = new ConcurrentLinkedQueue<>();
 
     public static void main(String[] args) throws Exception {
+        clearLeftoverProperties();
+
         // pazi convert the byte[] to string.
         Socket clientSocket = openServerSocket(PORT);
         InputStream clientIs = clientSocket.getInputStream();
@@ -58,6 +60,12 @@ public class App {
 
         Thread sendingThread = new Thread(() -> messageSender(GUEST_ID, SHARED_KEY));
         sendingThread.start();
+    }
+
+    private static void clearLeftoverProperties() throws Exception {
+        for (int i=0;i<KEYS_COUNT;i++) {
+            clearGuestProperty(GUEST_ID, SHARED_KEY + i);
+        }
     }
 
     /**
@@ -124,6 +132,13 @@ public class App {
             .map(App::parseEnumerateProp)
             .map(Tuple2::_1)
             .contains(key);
+    }
+
+    private static void clearGuestProperty(String guestId, String key) throws Exception {
+        ProcessBuilder proc = new ProcessBuilder(
+            "VBoxManage", "guestproperty", "delete", guestId, key);
+        Process p = proc.start();
+        p.waitFor();
     }
 
     /*package*/ static Tuple2<String, String> parseEnumerateProp(String outputLine) {
