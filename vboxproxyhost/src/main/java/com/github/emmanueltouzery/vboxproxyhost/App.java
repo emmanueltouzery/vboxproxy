@@ -30,6 +30,7 @@ public class App {
 
     private static int nextKeyIndex = 0;
     private static int socketCount = 0;
+    private static Set<Integer> activeSockets = HashSet.empty();
 
     private static final Logger logger = LoggerFactory.getLogger(App.class);
 
@@ -171,8 +172,8 @@ public class App {
     }
 
     private static void notifyGuestSocketCount(String communicationKey) throws Exception {
-        sendMessage(GUEST_ID, SharedItems.getSocketsCountPropName(communicationKey),
-                    new ByteArray(Integer.toString(socketCount).getBytes()));
+        sendMessage(GUEST_ID, SharedItems.getActiveSocketsPropName(communicationKey),
+                    new ByteArray(activeSockets.mkString(",").getBytes()));
     }
 
     private static void killGuestApp(String baseKey) throws Exception {
@@ -202,6 +203,7 @@ public class App {
             try {
                 Socket socket = serverSocket.accept();
                 ++socketCount;
+                activeSockets = activeSockets.add(socketCount);
                 notifyGuestSocketCount(communicationKey);
                 (new Thread(() -> handler.accept(socket, socketCount))).start();
             } catch (Throwable t) {
