@@ -2,7 +2,6 @@ package com.github.emmanueltouzery.vboxproxyguest;
 
 import com.beust.jcommander.JCommander;
 import java.io.*;
-import java.util.*;
 import java.util.function.*;
 import java.net.*;
 import java.util.Base64;
@@ -23,6 +22,8 @@ public class App {
 
     private static final Logger logger = LoggerFactory.getLogger(App.class);
 
+    private static Map<Integer,RemoteSocketHandler> socketHandlersPerSocketId = HashMap.empty();
+
     public static void main(String[] args) throws Exception {
         logger.info("\n\n\n######## vboxproxyguest starting!");
 
@@ -39,16 +40,11 @@ public class App {
             System.exit(1);
         }
 
-        Socket socket = new Socket(params.getRemoteServerIp(), params.getRemoteServerPort());
-        final OutputStream socketOs = socket.getOutputStream();
-        final InputStream socketIs = socket.getInputStream();
-
-        Thread socketWriterThread = new Thread(
-            () -> writeToSocket(params.getCommunicationKey(), socketOs));
-        socketWriterThread.start();
-
-        Thread socketReaderThread = new Thread(() -> readFromSocket(socketIs));
-        socketReaderThread.start();
+        Thread socketRegistrationThread = new Thread(
+            () -> listenForSocketRegister(params.getCommunicationKey(),
+                                          params.getRemoteServerIp(),
+                                          params.getRemoteServerPort()));
+        socketRegistrationThread.start();
 
         String killSwitchKey = SharedItems.getKillSwitchPropName(params.getCommunicationKey());
         while (true) {
@@ -63,36 +59,108 @@ public class App {
         }
     }
 
-    // we communicate with the host through guest properties.
-    private static void writeToSocket(String baseKey, OutputStream stream) {
+    private static void listenForSocketRegister(String baseKey,
+                                              String remoteServerIp, int remotePort) {
+        final String socketKey = SharedItems.getActiveSocketsPropName(baseKey);
         while (true) {
             try {
-                String actualKey = baseKey + nextKeyIndex;
-                nextKeyIndex = (nextKeyIndex + 1) % SharedItems.KEYS_COUNT;
-                logger.info("waiting for host message " + actualKey);
-                Option<ByteArray> hostMsg;
-                while ((hostMsg = readFromHost(actualKey)).isEmpty()) {
-                    waitForHost(actualKey);
-                }
-                stream.write(hostMsg.get().bytes);
-                stream.flush();
-                logger.info("host says: " + new String(hostMsg.get().bytes, "UTF-8"));
-                clearFromHost(actualKey);
-                logger.info("successfully cleared from host");
+                waitForHost(socketKey);
+                readFromHost(socketKey).forEach(socketList -> {
+                        Set<Integer> activeOnHost =
+                            HashSet.of(socketList.toString().split(","))
+                            .map(Integer::parseInt);
+                        Set<Integer> activeHere = socketHandlersPerSocketId.keySet();
+
+                        Set<Integer> toAdd = activeOnHost.diff(activeHere);
+                        toAdd.forEach(
+                            sid -> Try.run(() -> addSocketHandler(
+                                               baseKey, sid, remoteServerIp,
+                                               remotePort))
+                            .orElseRun(t -> logger.error("error adding socket handler", t)));
+
+                        Set<Integer> toRemove = activeHere.diff(activeOnHost);
+                        toRemove.forEach(sid -> removeSocketHandler(sid));
+                    });
             } catch (Throwable t) {
-                logger.error("error in writeToSocket", t);
+                logger.error("Error in listenForSocketRegister", t);
             }
         }
     }
 
-    // we communicate with the host by writing to stdout.
-    private static void readFromSocket(InputStream stream) {
-        StreamHelpers.streamHandleAsAvailable(stream, data -> {
-                Try.run(() -> logger.info("remote says: {}.",
-                                          StreamHelpers.summarize(new String(data.bytes, "UTF-8"))));
-                Try.run(() -> System.out.write(data.bytes));
-                System.out.flush();
-            }, t -> logger.error("error reading from socket", t));
+    private static synchronized void addSocketHandler(String baseKey, int socketId,
+                                               String remoteServerIp, int remotePort) throws Exception {
+        Socket socket = new Socket(remoteServerIp, remotePort);
+        RemoteSocketHandler handler = new RemoteSocketHandler(baseKey, socketId, socket);
+        socketHandlersPerSocketId = socketHandlersPerSocketId.put(socketId, handler);
+        handler.startThreads();
+    }
+
+    private static synchronized void removeSocketHandler(int socketId) {
+        // TODO
+    }
+
+    private static class RemoteSocketHandler {
+
+        private final Socket socket;
+        private final int socketId;
+
+        private final OutputStream socketOs;
+        private final InputStream socketIs;
+
+        private final Thread socketWriterThread;
+        private final Thread socketReaderThread;
+
+        public RemoteSocketHandler(String baseKey, int socketId, Socket socket) throws IOException {
+            this.socket = socket;
+            this.socketId = socketId;
+            socketOs = socket.getOutputStream();
+            socketIs = socket.getInputStream();
+
+            socketWriterThread = new Thread(() -> writeToSocket(baseKey));
+            socketReaderThread = new Thread(() -> readFromSocket());
+        }
+
+        public void startThreads() {
+            socketWriterThread.start();
+            socketReaderThread.start();
+        }
+
+        // we communicate with the host through guest properties.
+        private void writeToSocket(String baseKey) {
+            while (true) {
+                try {
+                    String actualKey = SharedItems.getDataPropName(baseKey, socketId, nextKeyIndex);
+                    nextKeyIndex = (nextKeyIndex + 1) % SharedItems.KEYS_COUNT;
+                    logger.info("waiting for host message " + actualKey);
+                    Option<ByteArray> hostMsg;
+                    while ((hostMsg = readFromHost(actualKey)).isEmpty()) {
+                        waitForHost(actualKey);
+                    }
+                    socketOs.write(hostMsg.get().bytes);
+                    socketOs.flush();
+                    logger.info("host says: " + new String(hostMsg.get().bytes, "UTF-8"));
+                    clearFromHost(actualKey);
+                    logger.info("successfully cleared from host");
+                } catch (Throwable t) {
+                    logger.error("error in writeToSocket", t);
+                }
+            }
+        }
+
+        // we communicate with the host by writing to stdout.
+        private void readFromSocket() {
+            StreamHelpers.streamHandleAsAvailable(socketIs, data -> {
+                    Try.run(() -> logger.info("remote says: {}.",
+                                              StreamHelpers.summarize(new String(data.bytes, "UTF-8"))));
+                    // merge headers & data in one byte[]
+                    // as it's critical we write both atomically
+                    // -- other threads are also writing stuff!
+                    byte[] toWrite = new GuestResponseHeaders.HeadersData(
+                        data.bytes.length, socketId).toBytesWithData(data.bytes);
+                    Try.run(() -> System.out.write(toWrite));
+                    System.out.flush();
+                }, t -> logger.error("error reading from socket", t));
+        }
     }
 
     private static Option<ByteArray> readFromHost(String key) throws IOException {

@@ -14,6 +14,18 @@ public class GuestResponseHeaders {
             this.msgLength = msgLength;
             this.socketIdx = socketIdx;
         }
+
+        public byte[] toBytesWithData(byte[] data) {
+            if (data.length != msgLength) {
+                throw new IllegalArgumentException(
+                    String.format("packet length %d != %d", data.length, msgLength));
+            }
+            return ByteBuffer.allocate(Integer.BYTES*2+data.length)
+                .putInt(msgLength)
+                .putInt(socketIdx)
+                .put(data)
+                .array();
+        }
     }
 
     public static HeadersData parseHeaders(ByteArray packet) {

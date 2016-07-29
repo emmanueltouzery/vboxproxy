@@ -8,8 +8,8 @@ public class SharedItems {
         return baseKey + "_killswitch";
     }
 
-    public static String getSocketsCountPropName(String baseKey) {
-        return baseKey + "_socketscount";
+    public static String getActiveSocketsPropName(String baseKey) {
+        return baseKey + "_activesockets";
     }
 
     public static String getDataPropName(String baseKey, int socket, int register) {
