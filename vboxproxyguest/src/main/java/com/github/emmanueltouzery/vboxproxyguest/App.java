@@ -70,7 +70,7 @@ public class App {
                 String actualKey = baseKey + nextKeyIndex;
                 nextKeyIndex = (nextKeyIndex + 1) % SharedItems.KEYS_COUNT;
                 logger.info("waiting for host message " + actualKey);
-                Option<StreamHelpers.ByteArray> hostMsg;
+                Option<ByteArray> hostMsg;
                 while ((hostMsg = readFromHost(actualKey)).isEmpty()) {
                     waitForHost(actualKey);
                 }
@@ -95,7 +95,7 @@ public class App {
             }, t -> logger.error("error reading from socket", t));
     }
 
-    private static Option<StreamHelpers.ByteArray> readFromHost(String key) throws IOException {
+    private static Option<ByteArray> readFromHost(String key) throws IOException {
         ProcessBuilder proc = new ProcessBuilder(
             VIRTUALBOX_FOLDER + "VBoxControl.exe", "guestproperty", "get", key);
         Process p = proc.start();
@@ -109,7 +109,7 @@ public class App {
             .substring(data.indexOf(discriminator) + discriminator.length())
             .trim();
         return Option.of(
-            new StreamHelpers.ByteArray(Base64.getDecoder().decode(base64)));
+            new ByteArray(Base64.getDecoder().decode(base64)));
     }
 
     private static void clearFromHost(String key) throws Exception {

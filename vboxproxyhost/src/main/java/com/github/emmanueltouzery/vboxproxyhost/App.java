@@ -35,7 +35,7 @@ public class App {
 
     private static Vector<SocketClientHandler> socketClientHandlers = Vector.empty();
 
-    private static final GuestMessagesProcessor guestMessageProcessor = new GuestMessagesProcessor();
+    private static final GuestMessagesProcessor guestMessagesProcessor = new GuestMessagesProcessor();
 
     public static void main(String[] args) throws Exception {
         final String communicationKey = UUID.randomUUID().toString();
@@ -56,7 +56,9 @@ public class App {
             System.exit(1);
         }
 
-        openServerSocket(params.getPort(), App::handleClient);
+        openServerSocket(communicationKey,
+            params.getPort(),
+            (socket, socketIdx) -> handleClient(communicationKey, socket, socketIdx));
 
         Consumer<ByteArray> toClientWriter = data ->
             Try.run(() -> {
@@ -79,26 +81,33 @@ public class App {
         }));
     }
 
-    private static void handleClient(Socket socket, int socketIndex) {
-        final SocketClientHandler socketHandler = new SocketClientHandler(socket, socketIndex);
-         socketClientHandlers = socketClientHandlers.add(socketHandler);
-        socketHandler.processMessages();
+    private static void handleClient(String communicationKey, Socket socket, int socketIndex) {
+        try {
+            final SocketClientHandler socketHandler =
+                new SocketClientHandler(communicationKey, socket, socketIndex);
+            socketClientHandlers = socketClientHandlers.append(socketHandler);
+            socketHandler.processMessages();
+        } catch (Throwable t) {
+            logger.error("error in handleClient", t);
+        }
     }
 
     private static void processGuestMessages() {
         while (true) {
             // TODO is busy looping OK? a lot of this in the app :S
             guestMessagesProcessor.decodeNext()
-                .flatMap(
-                    nextMsgInfo -> socketClientHandlers.find(socketHandler -> socketHandler.clientSocket == nextMsgInfo.socketIdx)
-                    .map(socketClientHandler -> {
+                .flatMap(nextMsgInfo -> socketClientHandlers.find(socketHandler -> socketHandler.socketIndex == nextMsgInfo.socketIdx)
+                    .transform(socketClientHandler -> {
                             if (socketClientHandler.isEmpty()) {
                                 logger.warn("Can't get a socket to which to write a guest's response to. Assuming it died.");
                             } else {
-                                System.out.println("writing to downsocket: " + StreamHelpers.summarize(new String(nextMsgInfo.msg.bytes, "UTF-8")));
-                                socketClientHandler.get().clientSocket.write(nextMsgInfo.msg.bytes);
-                                socketClientHandler.get().clientSocket.flush();
+                                Try.run(() -> {
+                                        System.out.println("writing to downsocket: " + StreamHelpers.summarize(new String(nextMsgInfo.msg.bytes, "UTF-8")));
+                                        socketClientHandler.get().clientSocket.getOutputStream().write(nextMsgInfo.msg.bytes);
+                                        socketClientHandler.get().clientSocket.getOutputStream().flush();
+                                    }).orElseRun(Throwable::printStackTrace);
                             }
+                            return null;
                         }));
         }
     }
@@ -113,7 +122,7 @@ public class App {
         private final Thread readerThread;
         private final Thread sendingThread;
 
-        public SocketClientHandler(Socket clientSocket, int socketIndex) {
+        public SocketClientHandler(String communicationKey, Socket clientSocket, int socketIndex) throws Exception {
             this.clientSocket = clientSocket;
             this.socketIndex = socketIndex;
 
@@ -161,7 +170,7 @@ public class App {
         }
     }
 
-    private static void notifyGuestSocketCount() throws Exception {
+    private static void notifyGuestSocketCount(String communicationKey) throws Exception {
         sendMessage(GUEST_ID, SharedItems.getSocketsCountPropName(communicationKey),
                     new ByteArray(Integer.toString(socketCount).getBytes()));
     }
@@ -185,14 +194,19 @@ public class App {
      * @return a consumer allowing you to write to the
      *         client socket.
      */
-    private static void openServerSocket(int port, BiConsumer<Socket, Integer> handler) throws IOException {
+    private static void openServerSocket(
+        String communicationKey, int port, BiConsumer<Socket, Integer> handler) throws IOException {
         // TODO try-with-resources?
         ServerSocket serverSocket = new ServerSocket(port);
         while (true) {
-            Socket socket = serverSocket.accept();
-            ++socketCount;
-            notifyGuestSocketCount();
-            (new Thread(() -> handler.accept(socket, socketCount))).start();
+            try {
+                Socket socket = serverSocket.accept();
+                ++socketCount;
+                notifyGuestSocketCount(communicationKey);
+                (new Thread(() -> handler.accept(socket, socketCount))).start();
+            } catch (Throwable t) {
+                logger.error("Error in openServerSocket loop", t);
+            }
         }
     }
 
@@ -255,8 +269,8 @@ public class App {
                 Try.run(() -> {
                         System.out.println("will give to down socket2 => " + StreamHelpers.summarize(new String(bytes.bytes, "UTF-8")));
                         handler.accept(bytes);
-                    }).orElseRun(x -> x.printStackTrace());
+                    }).orElseRun(Throwable::printStackTrace);
             },
-            t -> t.printStackTrace());
+            Throwable::printStackTrace);
     }
 }

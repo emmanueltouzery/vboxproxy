@@ -10,7 +10,6 @@ import com.github.emmanueltouzery.vboxproxycommon.*;
 public class GuestMessagesProcessor {
 
     private Vector<ByteArray> undecodedGuestMessages = Vector.empty();
-    private Option<ByteArray> lastPartialGuestMessage = Option.none();
 
     public synchronized void receivedFromGuest(ByteArray data) {
         undecodedGuestMessages = undecodedGuestMessages.append(data);
@@ -30,25 +29,22 @@ public class GuestMessagesProcessor {
      * returns socket index + data
      */
     public synchronized Option<GuestMessage> decodeNext() {
-        List<ByteArray> toConsider = lastPartialGuestMessage.isDefined()
-            ? List.ofAll(undecodedGuestMessages).prepend(lastPartialGuestMessage.get())
-            : List.ofAll(undecodedGuestMessages);
-
-        Option<Tuple3<GuestMessage, ByteArray, List<ByteArray>>> msgAndRestOpt =
-            mergePacketsToGetFirstPacketLength(toConsider, GuestResponseHeaders.HEADERS_LENGTH)
+        Option<Tuple2<GuestMessage, List<ByteArray>>> msgAndRestOpt =
+            mergePacketsToGetFirstPacketLength(undecodedGuestMessages, GuestResponseHeaders.HEADERS_LENGTH)
             .flatMap(headersInFirstPacket -> {
                     GuestResponseHeaders.HeadersData headersData = GuestResponseHeaders.parseHeaders(headersInFirstPacket.head());
                     return mergePacketsToGetFirstPacketLength(headersInFirstPacket, Integer.BYTES*(2+headersData.msgLength))
-                        .flatMap(messageInFirstPacket ->
-                                 headersInFirstPacket
+                        .map(messageInFirstPacket ->
+                                 messageInFirstPacket.head()
                                  .drop(GuestResponseHeaders.HEADERS_LENGTH)
                                  .split(headersData.msgLength*Integer.BYTES)
-                                 .transform((msg, rest) -> Tuple.of(new GuestMessage(headersData.socketIdx, msg), rest, messageInFirstPacket)));
+                                 .transform((msg, rest) -> Tuple.of(
+                                                new GuestMessage(headersData.socketIdx, msg),
+                                                rest.isEmpty() ? messageInFirstPacket.drop(1) : messageInFirstPacket.drop(1).prepend(rest))));
                 });
 
         return msgAndRestOpt.map(msgAndRest -> {
-                lastPartialGuestMessage = Option.when(msgAndRest._2.isEmpty(), () -> msgAndRest._2);
-                undecodedGuestMessages = msgAndRest._3.drop(1).toVector();
+                undecodedGuestMessages = msgAndRest._2.toVector();
                 return msgAndRest._1;
             });
     }
@@ -58,7 +54,7 @@ public class GuestMessagesProcessor {
      * the packets together.
      */
     private static Option<List<ByteArray>> mergePacketsToGetFirstPacketLength(
-        List<ByteArray> packets, int length) {
+        Traversable<ByteArray> packets, int length) {
         List<ByteArray> result = packets.foldLeft(
             List.of(packets.head()),
             (sofar, cur) -> sofar.head().length() >= length
