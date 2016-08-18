@@ -45,16 +45,16 @@ public class ByteArray {
             throw new IllegalArgumentException(String.format("ByteArray of length %d can't drop %d bytes", bytes.length, byteCount));
         }
         byte[] newData = new byte[bytes.length - byteCount];
-        int i = byteCount;
-        for (byte b : bytes) {
-            newData[i++] = b;
+        int i = 0;
+        for (int orig=byteCount; orig<byteCount+newData.length; orig++) {
+            newData[i++] = bytes[orig];
         }
         return new ByteArray(newData);
     }
 
     // TODO needs a test, or a couple of them.
     public Tuple2<ByteArray,ByteArray> split(int byteIdx) {
-        if (byteIdx > bytes.length) {
+        if (byteIdx > bytes.length || byteIdx < 0) {
             throw new IllegalArgumentException(String.format("ByteArray of length %d can't split at %d bytes", bytes.length, byteIdx));
         }
         byte[] part1 = new byte[byteIdx];
@@ -74,5 +74,18 @@ public class ByteArray {
         return Try.of(() -> new String(bytes, "UTF-8")
                       .replaceAll("\\p{C}", "?")) // http://stackoverflow.com/a/6199346/516188
             .getOrElse("** not utf8 **");
+    }
+
+    @Override
+    public boolean equals(Object other) {
+        if (!(other instanceof ByteArray)) {
+            return false;
+        }
+        return java.util.Arrays.equals(bytes, ((ByteArray)other).bytes);
+    }
+
+    @Override
+    public int hashCode() {
+        return bytes.hashCode();
     }
 }

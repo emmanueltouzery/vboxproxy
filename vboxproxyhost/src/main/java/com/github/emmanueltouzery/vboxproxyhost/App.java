@@ -39,9 +39,11 @@ public class App {
     private static final GuestMessagesProcessor guestMessagesProcessor = new GuestMessagesProcessor();
 
     public static void main(String[] args) throws Exception {
+        logger.info("proxy host starting");
         final String communicationKey = UUID.randomUUID().toString();
 
-        clearLeftoverProperties(communicationKey);
+        // TODO speed issue. I think i can use wildcards to wipe based on pattern.
+        // clearLeftoverProperties(communicationKey);
         clearGuestProperty(GUEST_ID, SharedItems.getKillSwitchPropName(communicationKey));
 
         CommandlineParams params = new CommandlineParams();
@@ -57,16 +59,12 @@ public class App {
             System.exit(1);
         }
 
-        openServerSocket(communicationKey,
-            params.getPort(),
-            (socket, socketIdx) -> handleClient(communicationKey, socket, socketIdx));
-
         Consumer<ByteArray> toClientWriter = data ->
             Try.run(() -> {
                     guestMessagesProcessor.receivedFromGuest(data);
                 });
 
-        System.out.println("before receiver thread");
+        logger.info("before receiver thread");
         Thread receiverThread = new Thread(
             () -> Try.run(() -> runGuestApp(GUEST_ID, GUEST_USERNAME, GUEST_APP_PATH,
                                             params.getRemoteServerIp(), params.getRemoteServerPort(),
@@ -76,6 +74,15 @@ public class App {
         Thread guestMessagesProcessor = new Thread(App::processGuestMessages);
         guestMessagesProcessor.start();
 
+        Thread serverSocketThread = new Thread(
+            () -> Try.run(() ->
+                         openServerSocket(communicationKey,
+                                          params.getPort(),
+                                          (socket, socketIdx) -> handleClient(communicationKey, socket, socketIdx))));
+        serverSocketThread.start();
+
+        logger.info("proxy host ready!");
+
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
                     Try.run(() -> killGuestApp(communicationKey));
                     System.out.println("sent the kill switch to the client");
@@ -84,6 +91,7 @@ public class App {
 
     private static void handleClient(String communicationKey, Socket socket, int socketIndex) {
         try {
+            logger.info("Got new socket client!");
             final SocketClientHandler socketHandler =
                 new SocketClientHandler(communicationKey, socket, socketIndex);
             socketClientHandlers = socketClientHandlers.append(socketHandler);
@@ -100,7 +108,7 @@ public class App {
                 .flatMap(nextMsgInfo -> socketClientHandlers.find(socketHandler -> socketHandler.socketIndex == nextMsgInfo.socketIdx)
                     .transform(socketClientHandler -> {
                             if (socketClientHandler.isEmpty()) {
-                                logger.warn("Can't get a socket to which to write a guest's response to. Assuming it died.");
+                                logger.warn("Can't get a socket to which to write guest {} response to. Assuming it died.", nextMsgInfo.socketIdx);
                             } else {
                                 Try.run(() -> {
                                         System.out.println("writing to downsocket: " + StreamHelpers.summarize(new String(nextMsgInfo.msg.bytes, "UTF-8")));

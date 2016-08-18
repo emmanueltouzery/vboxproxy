@@ -4,7 +4,7 @@ import java.nio.ByteBuffer;
 
 public class GuestResponseHeaders {
 
-    public static final int HEADERS_LENGTH = Integer.BYTES*2;
+    public static final int HEADERS_LENGTH_BYTES = Integer.BYTES*2;
 
     public static class HeadersData {
         public final int msgLength;
